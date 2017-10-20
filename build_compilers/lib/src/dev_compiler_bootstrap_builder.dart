@@ -37,12 +37,11 @@ class DevCompilerBootstrapBuilder extends Builder {
     if (!isAppEntrypoint) return;
 
     var moduleId = buildStep.inputId.changeExtension(moduleExtension);
-    var module = new Module.fromJson(
-        JSON.decode(await buildStep.readAsString(moduleId))
-            as Map<String, dynamic>);
+    var moduleReader = await buildStep.fetchResource(moduleReaderResource);
+    var module = await moduleReader.readModule(moduleId, buildStep);
 
     // First, ensure all transitive modules are built.
-    await _ensureTransitiveModules(module, buildStep);
+    await _ensureTransitiveModules(module, buildStep, moduleReader);
 
     var appModuleName = p.withoutExtension(module.jsId.path);
 
@@ -65,7 +64,8 @@ class DevCompilerBootstrapBuilder extends Builder {
     // Map from module name to module path for custom modules.
     var modulePaths = {'dart_sdk': 'packages/\$sdk/dev_compiler/amd/dart_sdk'};
     var transitiveNoneLibJsModules = [module.jsId]
-      ..addAll((await module.computeTransitiveDependencies(buildStep)))
+      ..addAll(
+          (await module.computeTransitiveDependencies(buildStep, moduleReader)))
       ..where((dartId) => !dartId.path.startsWith('lib/'))
           .map((dartId) => dartId.changeExtension(jsModuleExtension));
     for (var module in transitiveNoneLibJsModules) {
@@ -100,9 +100,10 @@ class DevCompilerBootstrapBuilder extends Builder {
 
   /// Ensures that all transitive js modules are available and built.
   Future<Null> _ensureTransitiveModules(
-      Module module, AssetReader reader) async {
+      Module module, AssetReader reader, ModuleReader moduleReader) async {
     // Collect all the modules this module depends on, plus this module.
-    var transitiveDeps = await module.computeTransitiveDependencies(reader);
+    var transitiveDeps =
+        await module.computeTransitiveDependencies(reader, moduleReader);
     var jsModules = transitiveDeps
         .map((id) => id.changeExtension(jsModuleExtension))
         .toList()

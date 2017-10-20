@@ -3,7 +3,6 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:bazel_worker/bazel_worker.dart';
 import 'package:build/build.dart';
@@ -28,9 +27,8 @@ class UnlinkedSummaryBuilder implements Builder {
 
   @override
   Future build(BuildStep buildStep) async {
-    var module = new Module.fromJson(
-        JSON.decode(await buildStep.readAsString(buildStep.inputId))
-            as Map<String, dynamic>);
+    var moduleReader = await buildStep.fetchResource(moduleReaderResource);
+    var module = await moduleReader.readModule(buildStep.inputId, buildStep);
     try {
       await createUnlinkedSummary(module, buildStep);
     } catch (e, s) {
@@ -48,11 +46,10 @@ class LinkedSummaryBuilder implements Builder {
 
   @override
   Future build(BuildStep buildStep) async {
-    var module = new Module.fromJson(
-        JSON.decode(await buildStep.readAsString(buildStep.inputId))
-            as Map<String, dynamic>);
+    var moduleReader = await buildStep.fetchResource(moduleReaderResource);
+    var module = await moduleReader.readModule(buildStep.inputId, buildStep);
     try {
-      await createLinkedSummary(module, buildStep);
+      await createLinkedSummary(module, buildStep, moduleReader);
     } catch (e, s) {
       log.warning('Error creating ${module.linkedSummaryId}:\n$e\n$s');
     }
@@ -93,9 +90,11 @@ Future createUnlinkedSummary(Module module, BuildStep buildStep,
 }
 
 /// Creates a linked summary for [module].
-Future createLinkedSummary(Module module, BuildStep buildStep,
+Future createLinkedSummary(
+    Module module, BuildStep buildStep, ModuleReader moduleReader,
     {bool isRoot = false}) async {
-  var transitiveDeps = await module.computeTransitiveDependencies(buildStep);
+  var transitiveDeps =
+      await module.computeTransitiveDependencies(buildStep, moduleReader);
   var transitiveUnlinkedSummaryDeps = <AssetId>[];
   var transitiveLinkedSummaryDeps = <AssetId>[];
 

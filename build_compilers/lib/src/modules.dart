@@ -15,6 +15,28 @@ import 'summary_builder.dart';
 
 part 'modules.g.dart';
 
+/// A shared [ModuleReader] resource for all users.
+final moduleReaderResource =
+    new Resource<ModuleReader>(() => new ModuleReader());
+
+/// Handles caching the result of reading serialized modules.
+class ModuleReader {
+  final _cachedModules = <AssetId, Future<Module>>{};
+
+  Future<Module> readModule(
+      AssetId serializedModuleId, AssetReader assetReader) async {
+    if (!await assetReader.canRead(serializedModuleId)) return null;
+    return _cachedModules.putIfAbsent(
+        serializedModuleId, () => _readModule(serializedModuleId, assetReader));
+  }
+
+  Future<Module> _readModule(
+      AssetId serializedModuleId, AssetReader assetReader) async {
+    var content = await assetReader.readAsString(serializedModuleId);
+    return new Module.fromJson(JSON.decode(content) as Map<String, dynamic>);
+  }
+}
+
 /// A collection of Dart libraries in a strongly connected component and the
 /// modules they depend on.
 ///
@@ -109,7 +131,8 @@ class Module extends Object with _$ModuleSerializerMixin {
 
   /// Computes the [primarySource]s of all [Module]s that are transitively
   /// depended on by this module.
-  Future<Set<AssetId>> computeTransitiveDependencies(AssetReader reader) async {
+  Future<Set<AssetId>> computeTransitiveDependencies(
+      AssetReader assetReader, ModuleReader moduleReader) async {
     var transitiveDeps = new Set<AssetId>();
     var modulesToCrawl = directDependencies.toSet();
     while (modulesToCrawl.isNotEmpty) {
@@ -117,9 +140,8 @@ class Module extends Object with _$ModuleSerializerMixin {
       modulesToCrawl.remove(next);
       if (transitiveDeps.contains(next)) continue;
       transitiveDeps.add(next);
-      var module = new Module.fromJson(JSON.decode(
-              await reader.readAsString(next.changeExtension(moduleExtension)))
-          as Map<String, dynamic>);
+      var module = await moduleReader.readModule(
+          next.changeExtension(moduleExtension), assetReader);
       modulesToCrawl.addAll(module.directDependencies);
     }
     return transitiveDeps;

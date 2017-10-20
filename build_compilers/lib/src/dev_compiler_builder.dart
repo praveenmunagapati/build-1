@@ -3,7 +3,6 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:convert';
 import 'package:bazel_worker/bazel_worker.dart';
 import 'package:build/build.dart';
 import 'package:path/path.dart' as p;
@@ -34,11 +33,10 @@ class DevCompilerBuilder implements Builder {
 
   @override
   Future build(BuildStep buildStep) async {
-    var module = new Module.fromJson(
-        JSON.decode(await buildStep.readAsString(buildStep.inputId))
-            as Map<String, dynamic>);
+    var moduleReader = await buildStep.fetchResource(moduleReaderResource);
+    var module = await moduleReader.readModule(buildStep.inputId, buildStep);
     try {
-      await createDevCompilerModule(module, buildStep);
+      await createDevCompilerModule(module, buildStep, moduleReader);
     } on DartDevcCompilationException catch (e) {
       log.warning('Error compiling ${module.jsId}:\n$e');
       await buildStep.writeAsString(
@@ -48,9 +46,11 @@ class DevCompilerBuilder implements Builder {
 }
 
 /// Compile [module] with the dev compiler.
-Future createDevCompilerModule(Module module, BuildStep buildStep,
+Future createDevCompilerModule(
+    Module module, BuildStep buildStep, ModuleReader moduleReader,
     {bool debugMode = true}) async {
-  var transitiveDeps = await module.computeTransitiveDependencies(buildStep);
+  var transitiveDeps =
+      await module.computeTransitiveDependencies(buildStep, moduleReader);
   var transitiveSummaryDeps =
       transitiveDeps.map((id) => id.changeExtension(linkedSummaryExtension));
   var scratchSpace = await buildStep.fetchResource(scratchSpaceResource);
